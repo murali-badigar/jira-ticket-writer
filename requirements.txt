@@ -1,0 +1,5 @@
+neuro-san==0.6.42
+langchain-mistralai>=0.2.0
+streamlit>=1.35.0
+python-dotenv>=1.0.1
+aiofiles>=24.1.0
