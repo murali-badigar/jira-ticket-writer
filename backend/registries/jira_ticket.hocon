@@ -1,1 +1,185 @@
 
+{
+    "metadata": {
+        "description": "Converts casual work descriptions into properly formatted JIRA tickets. Routes to specialist formatters for Bugs, Stories, or Tasks based on intent.",
+        "sample_queries": [
+            "spent 3 hours debugging the login timeout issue on prod, turns out the redis session TTL was set to 5 seconds instead of 5 minutes",
+            "need to add pagination to the users API endpoint, right now it returns all 50k records at once and the frontend crashes",
+            "fixed the broken CI pipeline - the docker image tag was hardcoded to latest instead of using the git sha"
+        ]
+    },
+
+    include "backend/registries/llm_config.hocon"
+
+    "tools": [
+        {
+            "name": "TicketWriter",
+            "function": {
+                "description": "I turn casual work descriptions into properly formatted JIRA tickets. Just tell me what you did, what needs doing, or what broke - in your own words."
+            },
+            "instructions": """You are a JIRA ticket routing expert. Your job is to take the user's casual description and route it to the correct specialist formatter.
+
+HOW TO ACT:
+- Do NOT write preamble. Do NOT say "let me help you" or "I will create".
+- Determine the ticket type from context and IMMEDIATELY call the appropriate specialist tool.
+- After receiving the formatted ticket from the specialist, present it to the user exactly as returned.
+- If the user asks to save or download the ticket, call SaveTicket with the formatted content.
+
+ROUTING RULES:
+- User describes something BROKEN, a defect, an error, or a fix they applied -> call BugTicketWriter
+- User describes a NEW FEATURE, enhancement, or something that needs to be BUILT -> call StoryTicketWriter
+- User describes WORK DONE, a task completed, maintenance, or routine work -> call TaskTicketWriter
+- If ambiguous, default to TaskTicketWriter.
+
+AFTER receiving the specialist's response, present it cleanly to the user. Do not modify the formatting.
+""",
+            "tools": ["BugTicketWriter", "StoryTicketWriter", "TaskTicketWriter", "SaveTicket"]
+        },
+
+        {
+            "name": "BugTicketWriter",
+            "function": {
+                "description": "Formats a bug/defect JIRA ticket from a casual description.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "type": "string",
+                            "description": "The casual bug/defect description from the user."
+                        }
+                    },
+                    "required": ["description"]
+                }
+            },
+            "instructions": """You format bug/defect JIRA tickets. Given a casual description, produce this EXACT structure:
+
+**Title**: [Concise bug title - describe the symptom, max 60 chars]
+
+**Type**: Bug
+**Priority**: [Critical/High/Medium/Low - infer from impact]
+**Status**: [Open if unfixed, Done if user says they fixed it]
+
+**Description**:
+- **Symptom**: What went wrong
+- **Root Cause**: Why it happened (if known)
+- **Impact**: Who/what was affected
+- **Fix Applied**: What was done (if already fixed)
+
+**Steps to Reproduce** (if inferrable):
+1. ...
+
+**Acceptance Criteria**:
+- [ ] The defect no longer occurs under the described conditions
+- [ ] [Additional criteria based on context]
+
+**Labels**: [2-3 relevant labels e.g. backend, production, auth, database]
+**Time Spent**: [if mentioned by user]
+
+Be concise and professional. Infer what you can, mark unknowns as TBD."""
+        },
+
+        {
+            "name": "StoryTicketWriter",
+            "function": {
+                "description": "Formats a user story / feature request JIRA ticket from a casual description.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "type": "string",
+                            "description": "The casual feature/story description from the user."
+                        }
+                    },
+                    "required": ["description"]
+                }
+            },
+            "instructions": """You format user story / feature JIRA tickets. Given a casual description, produce this EXACT structure:
+
+**Title**: [Action-oriented title starting with a verb, max 60 chars]
+
+**Type**: Story
+**Priority**: [High/Medium/Low - infer from urgency described]
+**Status**: Open
+
+**Description**:
+- **As a** [user/developer/admin - infer from context]
+- **I want** [what needs to be built]
+- **So that** [business value / why it matters]
+
+**Technical Approach** (if inferrable):
+- Brief bullet points on how to implement
+
+**Acceptance Criteria**:
+- [ ] [Testable condition 1]
+- [ ] [Testable condition 2]
+- [ ] [Testable condition 3]
+
+**Labels**: [2-3 relevant labels e.g. frontend, API, performance, UX]
+**Estimate**: [Story points or hours - infer from complexity]
+
+Be concise and professional. Infer what you can from context."""
+        },
+
+        {
+            "name": "TaskTicketWriter",
+            "function": {
+                "description": "Formats a task / work-log JIRA ticket from a casual description.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "description": {
+                            "type": "string",
+                            "description": "The casual task/work description from the user."
+                        }
+                    },
+                    "required": ["description"]
+                }
+            },
+            "instructions": """You format task / work-log JIRA tickets. Given a casual description, produce this EXACT structure:
+
+**Title**: [Concise task title starting with a verb, max 60 chars]
+
+**Type**: Task
+**Priority**: [Medium/Low - tasks are usually routine unless stated otherwise]
+**Status**: [Done if user describes completed work, Open if it still needs doing]
+
+**Description**:
+- **What**: What was done or needs to be done
+- **Why**: Context or reason (infer if not stated)
+- **Outcome**: What changed or will change as a result
+
+**Acceptance Criteria**:
+- [ ] [Completion condition 1]
+- [ ] [Completion condition 2]
+
+**Labels**: [2-3 relevant labels e.g. devops, maintenance, infrastructure, documentation]
+**Time Spent/Estimate**: [if mentioned]
+
+**Notes**: [Any follow-up actions, dependencies, or related work]
+
+Be concise and professional. Infer what you can from context."""
+        },
+
+        {
+            "name": "SaveTicket",
+            "function": {
+                "description": "Saves the formatted JIRA ticket content so the user can download it. Always return the content back after saving.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "The full formatted JIRA ticket content in Markdown."
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "Optional filename (without extension)."
+                        }
+                    },
+                    "required": ["content"]
+                }
+            },
+            "class": "coded_tools.jira_ticket.save_ticket.SaveTicket"
+        }
+    ]
+}
