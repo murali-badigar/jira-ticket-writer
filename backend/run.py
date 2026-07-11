@@ -1,7 +1,9 @@
 import os
 import sys
+from dotenv import load_dotenv
 
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(_backend_dir, "..", ".env"))
 
 os.environ["AGENT_MANIFEST_FILE"] = os.path.join(_backend_dir, "registries", "manifest.hocon")
 os.environ["AGENT_TOOL_PATH"] = os.path.join(_backend_dir, "coded_tools")
